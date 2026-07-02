@@ -6,7 +6,6 @@ import numpy as np
 from flower import InstagramFlower
 
 def get_hand_open_ratio(hand_landmarks, w, h):
-    """Calculates general hand openness for the Left Grow Hand."""
     thumb = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.THUMB_TIP]
     pinky = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.PINKY_TIP]
     wrist = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.WRIST]
@@ -15,20 +14,15 @@ def get_hand_open_ratio(hand_landmarks, w, h):
     return max(0.0, min(1.0, (span / max(1.0, scale) - 0.4) / 1.1))
 
 def get_index_pinch_ratio(hand_landmarks, w, h):
-    """Calculates bloom value purely based on the Right Hand's Thumb-to-Index tip spacing."""
     thumb = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.THUMB_TIP]
     index = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP]
     wrist = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.WRIST]
-    
-    # Track index caliper distance
     pinch_dist = math.hypot(int(thumb.x * w) - int(index.x * w), int(thumb.y * h) - int(index.y * h))
     scale = math.hypot(int(thumb.x * w) - int(wrist.x * w), int(thumb.y * h) - int(wrist.y * h))
-    
     ratio = pinch_dist / max(1.0, scale)
     return max(0.0, min(1.0, (ratio - 0.15) / 0.85))
 
 def main():
-    # Folder check verification
     if not os.path.exists('assets'):
         os.makedirs('assets')
 
@@ -37,7 +31,6 @@ def main():
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.75, min_tracking_confidence=0.75)
     
-    # Finger landmarks where the 5 flowers will sprout on the Left Hand
     fingertips = [
         mp_hands.HandLandmark.THUMB_TIP,
         mp_hands.HandLandmark.INDEX_FINGER_TIP,
@@ -46,12 +39,11 @@ def main():
         mp_hands.HandLandmark.PINKY_TIP
     ]
     
-    # Initialize the engine
     flower_system = {tip: InstagramFlower() for tip in fingertips}
     grow_value = 0.0
     bloom_value = 0.0
 
-    print("System active! Press 'q' to close the execution frame.")
+    print("Dense Multi-Branch Bouquet Mode Active. Press 'q' to quit.")
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -67,7 +59,7 @@ def main():
         right_hand_present = False
 
         if results.multi_hand_landmarks and results.multi_handedness:
-            # Pass 1: Handle metric calculations and screen layout bars
+            # Pass 1: Handle metric loops and display interface markers
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 hand_side = handedness.classification[0].label
                 
@@ -82,10 +74,10 @@ def main():
                     grow_value = grow_value + 0.07 if current_ratio > 0.4 else grow_value - 0.07
                     grow_value = max(0.0, min(1.0, grow_value))
                     
-                    # Blue Aesthetic Tracking Indicator Line
-                    cv2.line(frame, (wx - 30, wy), (ix - 30, wy - 120), (245, 130, 60), 4, cv2.LINE_AA)
-                    cv2.putText(frame, f"Grow: {grow_value:.2f}", (wx - 70, wy + 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
+                    # Blue Tracking Line
+                    cv2.line(frame, (wx - 40, wy), (wx - 40, wy - 150), (245, 130, 60), 4, cv2.LINE_AA)
+                    cv2.putText(frame, f"Grow: {grow_value:.2f}", (wx - 80, wy + 35),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
                 elif hand_side == "Right":
                     right_hand_present = True
@@ -95,31 +87,41 @@ def main():
                         bloom_value += 0.08 if bloom_value < target_bloom else -0.08
                     bloom_value = max(0.0, min(1.0, bloom_value))
                     
-                    # Highlight right thumb and index tips to showcase pinch dial control
+                    # Highlight pinch targets
                     r_thumb = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
                     r_index = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    cv2.circle(frame, (int(r_thumb.x * w), int(r_thumb.y * h)), 7, (190, 80, 160), -1, cv2.LINE_AA)
-                    cv2.circle(frame, (int(r_index.x * w), int(r_index.y * h)), 7, (190, 80, 160), -1, cv2.LINE_AA)
+                    cv2.circle(frame, (int(r_thumb.x * w), int(r_thumb.y * h)), 6, (190, 80, 160), -1, cv2.LINE_AA)
+                    cv2.circle(frame, (int(r_index.x * w), int(r_index.y * h)), 6, (190, 80, 160), -1, cv2.LINE_AA)
                     
-                    # Purple Aesthetic Tracking Indicator Line
-                    cv2.line(frame, (wx + 30, wy), (ix + 30, wy - 120), (190, 80, 160), 4, cv2.LINE_AA)
-                    cv2.putText(frame, f"Bloom: {bloom_value:.2f}", (wx - 20, wy + 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
+                    # Purple Tracking Line
+                    cv2.line(frame, (wx + 40, wy), (wx + 40, wy - 150), (190, 80, 160), 4, cv2.LINE_AA)
+                    cv2.putText(frame, f"Bloom: {bloom_value:.2f}", (wx - 10, wy + 35),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
-            # Pass 2: Draw the flowers onto the Left Hand finger coordinates
+            # Pass 2: High density bouquet generation loop
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 if handedness.classification[0].label == "Left":
+                    wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+                    wwx, wwy = int(wrist.x * w), int(wrist.y * h)
+                    
+                    # Sync general positions
                     for tip_id in fingertips:
                         lm = hand_landmarks.landmark[tip_id]
                         flower = flower_system[tip_id]
-                        flower.update_position(int(lm.x * w), int(lm.y * h), grow_value)
-                        flower.draw(frame, grow_value, bloom_value)
+                        flower.update_bouquet_position(wwx, wwy, int(lm.x * w), int(lm.y * h), grow_value)
+                    
+                    # Pass 2A: Render all structural branches first
+                    for tip_id in fingertips:
+                        flower_system[tip_id].draw_all_branches(frame, grow_value)
+                        
+                    # Pass 2B: Overlay all 15 flowers sequentially (forms the dense overlapping visual bouquet)
+                    for tip_id in fingertips:
+                        flower_system[tip_id].draw_all_flowers(frame, grow_value, bloom_value)
 
-        # Decay modifiers if hands drop below the screen view frame bounding boxes
         if not left_hand_present and grow_value > 0: grow_value = max(0.0, grow_value - 0.04)
         if not right_hand_present and bloom_value > 0: bloom_value = max(0.0, bloom_value - 0.04)
 
-        cv2.imshow('Virtual Lotus Gestures - Interactive Image Mode', frame)
+        cv2.imshow('Virtual Lotus Bouquet - TouchDesigner Aesthetic', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
