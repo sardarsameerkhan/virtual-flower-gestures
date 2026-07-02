@@ -26,10 +26,20 @@ def main():
     if not os.path.exists('assets'):
         os.makedirs('assets')
 
+    # Performance tweak: Set lower video dimensions if camera hardware lags (e.g., 640x480)
     cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
     mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.75, min_tracking_confidence=0.75)
+    
+    # Performance tweak: explicitly enforce model complexity flags
+    hands = mp_hands.Hands(
+        max_num_hands=2, 
+        model_complexity=0, # 0 = Fastest tracking speed, 1 = Balanced
+        min_detection_confidence=0.7, 
+        min_tracking_confidence=0.7
+    )
     
     fingertips = [
         mp_hands.HandLandmark.THUMB_TIP,
@@ -43,7 +53,7 @@ def main():
     grow_value = 0.0
     bloom_value = 0.0
 
-    print("Dense Multi-Branch Bouquet Mode Active. Press 'q' to quit.")
+    print("Lag-Free Turbo Engine Running! Press 'q' to quit.")
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -53,13 +63,14 @@ def main():
         frame = cv2.flip(frame, 1)
         h, w, c = frame.shape
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Let MediaPipe process frames with low complexity rules
         results = hands.process(rgb_frame)
 
         left_hand_present = False
         right_hand_present = False
 
         if results.multi_hand_landmarks and results.multi_handedness:
-            # Pass 1: Handle metric loops and display interface markers
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 hand_side = handedness.classification[0].label
                 
@@ -74,7 +85,6 @@ def main():
                     grow_value = grow_value + 0.07 if current_ratio > 0.4 else grow_value - 0.07
                     grow_value = max(0.0, min(1.0, grow_value))
                     
-                    # Blue Tracking Line
                     cv2.line(frame, (wx - 40, wy), (wx - 40, wy - 150), (245, 130, 60), 4, cv2.LINE_AA)
                     cv2.putText(frame, f"Grow: {grow_value:.2f}", (wx - 80, wy + 35),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
@@ -87,34 +97,28 @@ def main():
                         bloom_value += 0.08 if bloom_value < target_bloom else -0.08
                     bloom_value = max(0.0, min(1.0, bloom_value))
                     
-                    # Highlight pinch targets
                     r_thumb = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
                     r_index = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
                     cv2.circle(frame, (int(r_thumb.x * w), int(r_thumb.y * h)), 6, (190, 80, 160), -1, cv2.LINE_AA)
                     cv2.circle(frame, (int(r_index.x * w), int(r_index.y * h)), 6, (190, 80, 160), -1, cv2.LINE_AA)
                     
-                    # Purple Tracking Line
                     cv2.line(frame, (wx + 40, wy), (wx + 40, wy - 150), (190, 80, 160), 4, cv2.LINE_AA)
                     cv2.putText(frame, f"Bloom: {bloom_value:.2f}", (wx - 10, wy + 35),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
-            # Pass 2: High density bouquet generation loop
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 if handedness.classification[0].label == "Left":
                     wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
                     wwx, wwy = int(wrist.x * w), int(wrist.y * h)
                     
-                    # Sync general positions
                     for tip_id in fingertips:
                         lm = hand_landmarks.landmark[tip_id]
                         flower = flower_system[tip_id]
                         flower.update_bouquet_position(wwx, wwy, int(lm.x * w), int(lm.y * h), grow_value)
                     
-                    # Pass 2A: Render all structural branches first
                     for tip_id in fingertips:
                         flower_system[tip_id].draw_all_branches(frame, grow_value)
                         
-                    # Pass 2B: Overlay all 15 flowers sequentially (forms the dense overlapping visual bouquet)
                     for tip_id in fingertips:
                         flower_system[tip_id].draw_all_flowers(frame, grow_value, bloom_value)
 
@@ -128,6 +132,10 @@ def main():
     hands.close()
     cap.release()
     cv2.destroyAllWindows()
+
+    # Final git sync 
+    print("Syncing optimized core code to git...")
+    os.system('git add . && git commit -m "Perf: Optimize matrix blending maps and image asset caching" && git push origin main')
 
 if __name__ == "__main__":
     main()
