@@ -7,48 +7,55 @@ class InstagramFlower:
         self.base_y = 0
         self.head_x = 0
         self.head_y = 0
-        self.max_stem_length = 200  # Longer, elegant stems like the reel
+        self.max_stem_length = 180  # Elegant, long stems
         
     def update_position(self, target_x, target_y, growth_progress):
-        """Locks the flower to the finger tip and calculates its height based on the growth hand."""
+        """Locks the stem base to a fingertip and shoots the flower head upwards."""
         self.base_x = target_x
         self.base_y = target_y
         
-        # Stems grow strictly upwards
+        # Calculate height purely based on the Grow hand's value
         self.head_x = self.base_x
         self.head_y = int(self.base_y - (self.max_stem_length * growth_progress))
 
     def draw(self, frame, growth_progress, bloom_progress):
-        """Draws the high-fidelity aesthetic flowers and stems."""
+        """Draws aesthetic neon-cyan stems and layered, glowing lotus petals."""
         
-        # 1. Draw the sleek Neon Blue Stem (BGR: Blue=255, Green=100, Red=0)
+        # 1. Draw Sleek Cyan Stems (BGR: Electric Blue/Cyan)
         if growth_progress > 0.05:
-            # Main stem line
-            cv2.line(frame, (self.base_x, self.base_y), (self.head_x, self.head_y), (255, 120, 30), 4, cv2.LINE_AA)
-            # Small glowing base connector node
-            cv2.circle(frame, (self.base_x, self.base_y), 5, (255, 200, 100), -1)
+            cv2.line(frame, (self.base_x, self.base_y), (self.head_x, self.head_y), (245, 170, 65), 3, cv2.LINE_AA)
+            cv2.circle(frame, (self.base_x, self.base_y), 4, (245, 170, 65), -1)
 
-        # 2. Draw the Vibrant Coral/Pink Lotus Petals
-        if growth_progress > 0.5 and bloom_progress > 0.05:
-            num_petals = 8  # More petals for a fuller look
-            max_radius = int(50 * bloom_progress)
+        # 2. Draw Geometric Lotus Petals using Rotated Ellipses
+        if growth_progress > 0.3 and bloom_progress > 0.05:
+            num_petals = 6
+            max_radius = int(38 * bloom_progress)
             
-            # Layer 1: Outer dark pink/coral petals
+            # Layer 1: Outer Petals (Soft Pink-Coral)
             for i in range(num_petals):
-                angle = i * (2 * math.pi / num_petals) - (math.pi / 2)  # Orient upright
-                # Make petals slightly elliptical/pointed upwards
-                p_x = int(self.head_x + (max_radius * 0.7) * math.cos(angle))
-                p_y = int(self.head_y + (max_radius * 0.9) * math.sin(angle))
+                # Distribute angles symmetrically around a circle
+                angle_deg = i * (360 / num_petals)
+                angle_rad = math.radians(angle_deg)
                 
-                # Draw sharp petal vectors (BGR: Soft bright red/pink)
-                cv2.circle(frame, (p_x, p_y), int(max_radius * 0.5), (120, 100, 255), -1, cv2.LINE_AA)
-            
-            # Layer 2: Inner glowing orange/gold core petals
+                # Push the petal center slightly outward from the flower head core
+                p_x = int(self.head_x + (max_radius * 0.4) * math.cos(angle_rad))
+                p_y = int(self.head_y + (max_radius * 0.4) * math.sin(angle_rad))
+                
+                # Draw elegant pointed petals using ellipses
+                # (frame, center, (axes), angle, startAngle, endAngle, color, thickness)
+                cv2.ellipse(frame, (p_x, p_y), (int(max_radius * 0.6), int(max_radius * 0.3)), 
+                            angle_deg, 0, 360, (110, 120, 245), -1, cv2.LINE_AA)
+                
+            # Layer 2: Inner Core Accent Petals (Warm Golden Orange)
             for i in range(num_petals):
-                angle = i * (2 * math.pi / num_petals) + 0.3 # Offset angle for interlayering
-                p_x = int(self.head_x + (max_radius * 0.4) * math.cos(angle))
-                p_y = int(self.head_y + (max_radius * 0.5) * math.sin(angle))
-                cv2.circle(frame, (p_x, p_y), int(max_radius * 0.3), (80, 180, 255), -1, cv2.LINE_AA)
+                angle_deg = i * (360 / num_petals) + 30 # Offset angles to fill gaps
+                angle_rad = math.radians(angle_deg)
+                
+                p_x = int(self.head_x + (max_radius * 0.2) * math.cos(angle_rad))
+                p_y = int(self.head_y + (max_radius * 0.2) * math.sin(angle_rad))
+                
+                cv2.ellipse(frame, (p_x, p_y), (int(max_radius * 0.4), int(max_radius * 0.18)), 
+                            angle_deg, 0, 360, (60, 185, 245), -1, cv2.LINE_AA)
 
-            # Center golden pistil node
-            cv2.circle(frame, (self.head_x, self.head_y), int(max_radius * 0.2), (180, 240, 255), -1, cv2.LINE_AA)
+            # Center golden pistil dome
+            cv2.circle(frame, (self.head_x, self.head_y), int(max_radius * 0.22), (160, 240, 255), -1, cv2.LINE_AA)
