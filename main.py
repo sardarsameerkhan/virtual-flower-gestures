@@ -1,6 +1,8 @@
 import cv2
 import mediapipe as mp
 import math
+import os
+import numpy as np
 from flower import InstagramFlower
 
 def get_hand_open_ratio(hand_landmarks, w, h):
@@ -13,26 +15,29 @@ def get_hand_open_ratio(hand_landmarks, w, h):
     return max(0.0, min(1.0, (span / max(1.0, scale) - 0.4) / 1.1))
 
 def get_index_pinch_ratio(hand_landmarks, w, h):
-    """Calculates bloom purely based on the Right Hand's Thumb-to-Index spacing."""
+    """Calculates bloom value purely based on the Right Hand's Thumb-to-Index tip spacing."""
     thumb = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.THUMB_TIP]
     index = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP]
     wrist = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.WRIST]
     
-    # Distance between thumb and index tip
+    # Track index caliper distance
     pinch_dist = math.hypot(int(thumb.x * w) - int(index.x * w), int(thumb.y * h) - int(index.y * h))
-    # Normalize against wrist size so moving closer/further from camera doesn't break it
     scale = math.hypot(int(thumb.x * w) - int(wrist.x * w), int(thumb.y * h) - int(wrist.y * h))
     
     ratio = pinch_dist / max(1.0, scale)
-    # Scale nicely between a pinch (0) and open fingers (1)
     return max(0.0, min(1.0, (ratio - 0.15) / 0.85))
 
 def main():
+    # Folder check verification
+    if not os.path.exists('assets'):
+        os.makedirs('assets')
+
     cap = cv2.VideoCapture(0)
     
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.75, min_tracking_confidence=0.75)
     
+    # Finger landmarks where the 5 flowers will sprout on the Left Hand
     fingertips = [
         mp_hands.HandLandmark.THUMB_TIP,
         mp_hands.HandLandmark.INDEX_FINGER_TIP,
@@ -41,9 +46,12 @@ def main():
         mp_hands.HandLandmark.PINKY_TIP
     ]
     
+    # Initialize the engine
     flower_system = {tip: InstagramFlower() for tip in fingertips}
     grow_value = 0.0
     bloom_value = 0.0
+
+    print("System active! Press 'q' to close the execution frame.")
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -59,6 +67,7 @@ def main():
         right_hand_present = False
 
         if results.multi_hand_landmarks and results.multi_handedness:
+            # Pass 1: Handle metric calculations and screen layout bars
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 hand_side = handedness.classification[0].label
                 
@@ -70,37 +79,34 @@ def main():
                 if hand_side == "Left":
                     left_hand_present = True
                     current_ratio = get_hand_open_ratio(hand_landmarks, w, h)
-                    # Smooth tracking interpolation
                     grow_value = grow_value + 0.07 if current_ratio > 0.4 else grow_value - 0.07
                     grow_value = max(0.0, min(1.0, grow_value))
                     
-                    # Left Grow Line Indicator
+                    # Blue Aesthetic Tracking Indicator Line
                     cv2.line(frame, (wx - 30, wy), (ix - 30, wy - 120), (245, 130, 60), 4, cv2.LINE_AA)
                     cv2.putText(frame, f"Grow: {grow_value:.2f}", (wx - 70, wy + 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
 
                 elif hand_side == "Right":
                     right_hand_present = True
-                    # NEW: Get bloom ratio STRICTLY from index finger & thumb pinch gesture
                     target_bloom = get_index_pinch_ratio(hand_landmarks, w, h)
                     
-                    # Smoothly transition bloom values
                     if abs(bloom_value - target_bloom) > 0.02:
                         bloom_value += 0.08 if bloom_value < target_bloom else -0.08
                     bloom_value = max(0.0, min(1.0, bloom_value))
                     
-                    # Highlight tracking explicitly on right Index + Thumb tips to look cool
+                    # Highlight right thumb and index tips to showcase pinch dial control
                     r_thumb = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
                     r_index = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    cv2.circle(frame, (int(r_thumb.x * w), int(r_thumb.y * h)), 7, (190, 80, 160), -1)
-                    cv2.circle(frame, (int(r_index.x * w), int(r_index.y * h)), 7, (190, 80, 160), -1)
+                    cv2.circle(frame, (int(r_thumb.x * w), int(r_thumb.y * h)), 7, (190, 80, 160), -1, cv2.LINE_AA)
+                    cv2.circle(frame, (int(r_index.x * w), int(r_index.y * h)), 7, (190, 80, 160), -1, cv2.LINE_AA)
                     
-                    # Right Bloom Line Indicator
+                    # Purple Aesthetic Tracking Indicator Line
                     cv2.line(frame, (wx + 30, wy), (ix + 30, wy - 120), (190, 80, 160), 4, cv2.LINE_AA)
                     cv2.putText(frame, f"Bloom: {bloom_value:.2f}", (wx - 20, wy + 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
 
-            # Draw flowers on Left hand
+            # Pass 2: Draw the flowers onto the Left Hand finger coordinates
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 if handedness.classification[0].label == "Left":
                     for tip_id in fingertips:
@@ -109,10 +115,11 @@ def main():
                         flower.update_position(int(lm.x * w), int(lm.y * h), grow_value)
                         flower.draw(frame, grow_value, bloom_value)
 
+        # Decay modifiers if hands drop below the screen view frame bounding boxes
         if not left_hand_present and grow_value > 0: grow_value = max(0.0, grow_value - 0.04)
         if not right_hand_present and bloom_value > 0: bloom_value = max(0.0, bloom_value - 0.04)
 
-        cv2.imshow('Virtual Lotus Gestures - Index Control Mode', frame)
+        cv2.imshow('Virtual Lotus Gestures - Interactive Image Mode', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
