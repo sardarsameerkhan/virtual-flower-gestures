@@ -1,34 +1,60 @@
 import cv2
+import mediapipe as mp
 
 def main():
-    # Initialize the webcam (0 is typically the default built-in camera)
     cap = cv2.VideoCapture(0)
     
-    if not cap.isOpened():
-        print("Error: Could not open the webcam. Please check your camera connection.")
-        return
+    # 1. Initialize MediaPipe Hands tools
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
+    
+    # Configure the hands detection module
+    hands = mp_hands.Hands(
+        static_image_mode=False,        # False means track smoothly like video frames
+        max_num_hands=2,                # Track up to two hands
+        min_detection_confidence=0.7,   # 70% confidence needed to detect a hand initially
+        min_tracking_confidence=0.7    # 70% confidence needed to keep tracking it
+    )
 
-    print("Webcam successfully started! Press 'q' on your keyboard to close the window.")
+    print("AI Hand Tracking started! Raise your hand to the camera. Press 'q' to exit.")
 
     while cap.isOpened():
-        # Capture frame-by-frame from the camera
         success, frame = cap.read()
         if not success:
-            print("Error: Empty frame received from camera.")
             continue
 
-        # Flip the frame horizontally so it acts like a mirror (selfie view)
-        # This makes hand gestures much more natural to control!
         frame = cv2.flip(frame, 1)
+        h, w, c = frame.shape  # Fetch frame dimensions (height, width, channels)
 
-        # Open a window and display the live camera frame
-        cv2.imshow('Virtual Flowers Project - Test View', frame)
+        # MediaPipe requires RGB images, but OpenCV processes frames in BGR format
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Process the frame and find hands
+        results = hands.process(rgb_frame)
 
-        # Wait for 1 millisecond. If the user presses 'q', break out of the loop.
+        # If any hands are detected on screen
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                # Draw the standard skeleton lines connecting the 21 dots
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                
+                # Extract the Index Finger Tip coordinate (Landmark index #8)
+                index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+                
+                # Convert normalized coordinates (0.0 to 1.0) into actual pixel locations on your screen
+                cx, cy = int(index_tip.x * w), int(index_tip.y * h)
+                
+                # Draw a custom glowing circle right on your index finger tip
+                cv2.circle(frame, (cx, cy), 15, (0, 255, 0), cv2.FILLED)
+
+        # Display output window
+        cv2.imshow('Virtual Flowers Project - Hand Tracking', frame)
+
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    # When everything is done, release the camera and close all windows safely
+    # Release resources safely
+    hands.close()
     cap.release()
     cv2.destroyAllWindows()
 
