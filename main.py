@@ -2,8 +2,27 @@ import cv2
 import mediapipe as mp
 import math
 import os
+import random
 import numpy as np
 from flower import InstagramFlower
+
+# Simple lightweight particle tracker class
+class PollenParticle:
+    def __init__(self, x, y):
+        self.x = float(x)
+        self.y = float(y)
+        # Random vector speeds to make particles drift upwards and outwards
+        self.vx = random.uniform(-2.5, 2.5)
+        self.vy = random.uniform(-4.0, -1.5)
+        self.alpha = 1.0  # Max Opacity
+        self.fade_speed = random.uniform(0.02, 0.04)
+        self.size = random.randint(3, 6)
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.alpha -= self.fade_speed
+        return self.alpha > 0
 
 def get_hand_open_ratio(hand_landmarks, w, h):
     thumb = hand_landmarks.landmark[mp.solutions.hands.HandLandmark.THUMB_TIP]
@@ -26,17 +45,14 @@ def main():
     if not os.path.exists('assets'):
         os.makedirs('assets')
 
-    # Performance tweak: Set lower video dimensions if camera hardware lags (e.g., 640x480)
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
     mp_hands = mp.solutions.hands
-    
-    # Performance tweak: explicitly enforce model complexity flags
     hands = mp_hands.Hands(
         max_num_hands=2, 
-        model_complexity=0, # 0 = Fastest tracking speed, 1 = Balanced
+        model_complexity=0, 
         min_detection_confidence=0.7, 
         min_tracking_confidence=0.7
     )
@@ -52,8 +68,12 @@ def main():
     flower_system = {tip: InstagramFlower() for tip in fingertips}
     grow_value = 0.0
     bloom_value = 0.0
+    
+    # Trackers for our new particle array
+    particles = []
+    pollen_triggered = False
 
-    print("Lag-Free Turbo Engine Running! Press 'q' to quit.")
+    print("Particle Engine & Color Shift Active! Press 'q' to quit.")
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -63,8 +83,6 @@ def main():
         frame = cv2.flip(frame, 1)
         h, w, c = frame.shape
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Let MediaPipe process frames with low complexity rules
         results = hands.process(rgb_frame)
 
         left_hand_present = False
@@ -73,21 +91,12 @@ def main():
         if results.multi_hand_landmarks and results.multi_handedness:
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 hand_side = handedness.classification[0].label
-                
-                wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
-                index_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
-                wx, wy = int(wrist.x * w), int(wrist.y * h)
-                ix, iy = int(index_mcp.x * w), int(index_mcp.y * h)
 
                 if hand_side == "Left":
                     left_hand_present = True
                     current_ratio = get_hand_open_ratio(hand_landmarks, w, h)
                     grow_value = grow_value + 0.07 if current_ratio > 0.4 else grow_value - 0.07
                     grow_value = max(0.0, min(1.0, grow_value))
-                    
-                    cv2.line(frame, (wx - 40, wy), (wx - 40, wy - 150), (245, 130, 60), 4, cv2.LINE_AA)
-                    cv2.putText(frame, f"Grow: {grow_value:.2f}", (wx - 80, wy + 35),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
                 elif hand_side == "Right":
                     right_hand_present = True
@@ -96,7 +105,23 @@ def main():
                     if abs(bloom_value - target_bloom) > 0.02:
                         bloom_value += 0.08 if bloom_value < target_bloom else -0.08
                     bloom_value = max(0.0, min(1.0, bloom_value))
-                    
+
+        if not left_hand_present and grow_value > 0: grow_value = max(0.0, grow_value - 0.04)
+        if not right_hand_present and bloom_value > 0: bloom_value = max(0.0, bloom_value - 0.04)
+
+        # Draw UI Interface Text Elements
+        if results.multi_hand_landmarks and results.multi_handedness:
+            for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+                hand_side = handedness.classification[0].label
+                wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+                wx, wy = int(wrist.x * w), int(wrist.y * h)
+
+                if hand_side == "Left":
+                    cv2.line(frame, (wx - 40, wy), (wx - 40, wy - 150), (245, 130, 60), 4, cv2.LINE_AA)
+                    cv2.putText(frame, f"Grow: {grow_value:.2f}", (wx - 80, wy + 35),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+
+                elif hand_side == "Right":
                     r_thumb = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
                     r_index = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
                     cv2.circle(frame, (int(r_thumb.x * w), int(r_thumb.y * h)), 6, (190, 80, 160), -1, cv2.LINE_AA)
@@ -106,6 +131,7 @@ def main():
                     cv2.putText(frame, f"Bloom: {bloom_value:.2f}", (wx - 10, wy + 35),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
+            # Draw Bouquet Elements
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 if handedness.classification[0].label == "Left":
                     wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
@@ -122,8 +148,29 @@ def main():
                     for tip_id in fingertips:
                         flower_system[tip_id].draw_all_flowers(frame, grow_value, bloom_value)
 
-        if not left_hand_present and grow_value > 0: grow_value = max(0.0, grow_value - 0.04)
-        if not right_hand_present and bloom_value > 0: bloom_value = max(0.0, bloom_value - 0.04)
+                    # 🌟 NEW FEATURE: POLLEN BURST TRIGGER MECHANICS
+                    if bloom_value > 0.95 and not pollen_triggered and grow_value > 0.6:
+                        pollen_triggered = True
+                        # Spawn particles from all active sub-branch heads
+                        for tip_id in fingertips:
+                            for i in range(3):
+                                hx, hy = flower_system[tip_id].get_sub_branch_endpoints(i, grow_value)
+                                for _ in range(3):  # 3 particles per sub-head = 45 total particles!
+                                    particles.append(PollenParticle(hx, hy))
+                    
+                    if bloom_value < 0.7:
+                        pollen_triggered = False
+
+        # 🌟 NEW FEATURE: LIVE PARTICLE ANIMATION AND RENDERING LOOP
+        active_particles = []
+        for p in particles:
+            if p.update():
+                active_particles.append(p)
+                # Render transparent glowing circles for particles
+                overlay = frame.copy()
+                cv2.circle(overlay, (int(p.x), int(p.y)), p.size, (100, 230, 255), -1, cv2.LINE_AA)
+                cv2.addWeighted(overlay, p.alpha, frame, 1.0 - p.alpha, 0, frame)
+        particles = active_particles
 
         cv2.imshow('Virtual Lotus Bouquet - TouchDesigner Aesthetic', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -132,10 +179,6 @@ def main():
     hands.close()
     cap.release()
     cv2.destroyAllWindows()
-
-    # Final git sync 
-    print("Syncing optimized core code to git...")
-    os.system('git add . && git commit -m "Perf: Optimize matrix blending maps and image asset caching" && git push origin main')
 
 if __name__ == "__main__":
     main()
