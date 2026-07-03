@@ -6,15 +6,13 @@ import random
 import numpy as np
 from flower import InstagramFlower
 
-# Simple lightweight particle tracker class
 class PollenParticle:
     def __init__(self, x, y):
         self.x = float(x)
         self.y = float(y)
-        # Random vector speeds to make particles drift upwards and outwards
         self.vx = random.uniform(-2.5, 2.5)
         self.vy = random.uniform(-4.0, -1.5)
-        self.alpha = 1.0  # Max Opacity
+        self.alpha = 1.0  
         self.fade_speed = random.uniform(0.02, 0.04)
         self.size = random.randint(3, 6)
 
@@ -69,11 +67,10 @@ def main():
     grow_value = 0.0
     bloom_value = 0.0
     
-    # Trackers for our new particle array
     particles = []
     pollen_triggered = False
 
-    print("Particle Engine & Color Shift Active! Press 'q' to quit.")
+    print("Single Asset Bouquet Engine Online! Press 'q' to quit.")
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -109,7 +106,7 @@ def main():
         if not left_hand_present and grow_value > 0: grow_value = max(0.0, grow_value - 0.04)
         if not right_hand_present and bloom_value > 0: bloom_value = max(0.0, bloom_value - 0.04)
 
-        # Draw UI Interface Text Elements
+        # Draw UI Overlay Elements
         if results.multi_hand_landmarks and results.multi_handedness:
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 hand_side = handedness.classification[0].label
@@ -131,7 +128,7 @@ def main():
                     cv2.putText(frame, f"Bloom: {bloom_value:.2f}", (wx - 10, wy + 35),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
-            # Draw Bouquet Elements
+            # Render Bouquet Layers
             for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                 if handedness.classification[0].label == "Left":
                     wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
@@ -148,27 +145,25 @@ def main():
                     for tip_id in fingertips:
                         flower_system[tip_id].draw_all_flowers(frame, grow_value, bloom_value)
 
-                    # 🌟 NEW FEATURE: POLLEN BURST TRIGGER MECHANICS
+                    # Burst Pollen Trigger Mechanics
                     if bloom_value > 0.95 and not pollen_triggered and grow_value > 0.6:
                         pollen_triggered = True
-                        # Spawn particles from all active sub-branch heads
                         for tip_id in fingertips:
                             for i in range(3):
                                 hx, hy = flower_system[tip_id].get_sub_branch_endpoints(i, grow_value)
-                                for _ in range(3):  # 3 particles per sub-head = 45 total particles!
+                                for _ in range(3):  
                                     particles.append(PollenParticle(hx, hy))
                     
                     if bloom_value < 0.7:
                         pollen_triggered = False
 
-        # 🌟 NEW FEATURE: LIVE PARTICLE ANIMATION AND RENDERING LOOP
+        # Live Particle Animation Processing Loop
         active_particles = []
         for p in particles:
             if p.update():
                 active_particles.append(p)
-                # Render transparent glowing circles for particles
                 overlay = frame.copy()
-                cv2.circle(overlay, (int(p.x), int(p.y)), p.size, (100, 230, 255), -1, cv2.LINE_AA)
+                cv2.circle(overlay, (int(p.x), int(p.y)), p.size, (180, 80, 255), -1, cv2.LINE_AA)
                 cv2.addWeighted(overlay, p.alpha, frame, 1.0 - p.alpha, 0, frame)
         particles = active_particles
 

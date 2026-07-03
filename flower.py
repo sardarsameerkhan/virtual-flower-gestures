@@ -8,19 +8,15 @@ class InstagramFlower:
         self.wy = 0  
         self.tip_x = 0
         self.tip_y = 0
-        self.max_stem_length = 220  
         
         self.prev_hx = [None, None, None]
         self.prev_hy = [None, None, None]
         
-        # Load assets
-        self.asset_mid = cv2.imread('assets/mid.png', cv2.IMREAD_UNCHANGED)
+        # Load only the single asset in its true colors
         self.asset_full = cv2.imread('assets/full.png', cv2.IMREAD_UNCHANGED)
         
-        # Cache variables for optimization
+        # Cache variables to maintain 30+ FPS
         self.cached_size = -1
-        self.cached_asset_type = None
-        self.cached_bloom = -1.0
         self.cached_img = None
         self.cached_mask = None
         self.cached_color = None
@@ -37,7 +33,7 @@ class InstagramFlower:
         dx = self.tip_x - self.wx
         dy = self.tip_y - self.wy
         base_angle = math.atan2(dy, dx)
-        magnitude = math.hypot(dx, dy) * 1.3  
+        magnitude = math.hypot(dx, dy) * 1.35  
         
         final_angle = base_angle + self.branch_offsets[idx]
         target_head_x = self.wx + magnitude * math.cos(final_angle)
@@ -50,39 +46,53 @@ class InstagramFlower:
             self.prev_hx[idx] = ideal_hx
             self.prev_hy[idx] = ideal_hy
         else:
-            self.prev_hx[idx] = int(self.prev_hx[idx] + 0.18 * (ideal_hx - self.prev_hx[idx]))
-            self.prev_hy[idx] = int(self.prev_hy[idx] + 0.18 * (ideal_hy - self.prev_hy[idx]))
+            self.prev_hx[idx] = int(self.prev_hx[idx] + 0.15 * (ideal_hx - self.prev_hx[idx]))
+            self.prev_hy[idx] = int(self.prev_hy[idx] + 0.15 * (ideal_hy - self.prev_hy[idx]))
             
         return self.prev_hx[idx], self.prev_hy[idx]
 
-    def overlay_png_fast(self, background, overlay_type, cx, cy, size, bloom_progress):
-        if size <= 0:
-            return background
+    def draw_curved_gradient_stem(self, frame, start_pt, end_pt, idx, growth_progress):
+        if growth_progress <= 0.05:
+            return
+
+        mid_x = (start_pt[0] + end_pt[0]) / 2
+        mid_y = (start_pt[1] + end_pt[1]) / 2
+        dx = end_pt[0] - start_pt[0]
+        dy = end_pt[1] - start_pt[1]
+        
+        perp_x = -dy * (self.branch_offsets[idx] * 0.6)
+        perp_y = dx * (self.branch_offsets[idx] * 0.6)
+        ctrl_x = int(mid_x + perp_x)
+        ctrl_y = int(mid_y + perp_y)
+
+        steps = 16
+        curve_pts = []
+        for step in range(steps + 1):
+            t = step / steps
+            x = (1-t)**2 * start_pt[0] + 2*(1-t)*t * ctrl_x + t**2 * end_pt[0]
+            y = (1-t)**2 * start_pt[1] + 2*(1-t)*t * ctrl_y + t**2 * end_pt[1]
+            curve_pts.append((int(x), int(y)))
+
+        for i in range(len(curve_pts) - 1):
+            t = i / steps
+            b = int((1 - t) * 120 + t * 240)
+            g = int((1 - t) * 40 + t * 220)
+            r = int((1 - t) * 160 + t * 60)
             
-        overlay = self.asset_mid if overlay_type == 'mid' else self.asset_full
-        if overlay is None:
+            cv2.line(frame, curve_pts[i], curve_pts[i+1], (b, g, r), 3, cv2.LINE_AA)
+            cv2.line(frame, curve_pts[i], curve_pts[i+1], (255, 255, 255), 1, cv2.LINE_AA)
+
+    def overlay_png_fast(self, background, cx, cy, size):
+        """Blends the raw flower image rapidly without any color shifting alterations."""
+        if size <= 0 or self.asset_full is None:
             return background
 
-        # Performance booster: Recalculate color matrices only if type, size, or bloom changes
-        if size != self.cached_size or overlay_type != self.cached_asset_type or abs(bloom_progress - self.cached_bloom) > 0.05:
-            resized = cv2.resize(overlay, (size, size), interpolation=cv2.INTER_LINEAR)
-            
+        # Performance booster: Recalculate cache only if image size scales up/down
+        if size != self.cached_size:
+            resized = cv2.resize(self.asset_full, (size, size), interpolation=cv2.INTER_LINEAR)
             self.cached_size = size
-            self.cached_asset_type = overlay_type
-            self.cached_bloom = bloom_progress
-            
-            bgr_channels = resized[:, :, :3]
+            self.cached_color = resized[:, :, :3]
             self.cached_mask = (resized[:, :, 3] / 255.0)[:, :, np.newaxis]
-            
-            # 🌟 NEW FEATURE: DYNAMIC COLOR SHIFTING ENGINE (HSV Space Shift)
-            hsv = cv2.cvtColor(bgr_channels, cv2.COLOR_BGR2HSV)
-            # Dynamically shift Hue channel by a factor of your bloom scaling dial
-            hue_shift = int(bloom_progress * 40) 
-            hsv[:, :, 0] = (hsv[:, :, 0].astype(np.int32) + hue_shift) % 180
-            # Boost Saturation as the flower opens up
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1].astype(np.int32) + 20, 0, 255)
-            
-            self.cached_color = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
         
         x1, x2 = cx - size // 2, cx + size // 2
         y1, y2 = cy - size // 2, cy + size // 2
@@ -103,17 +113,14 @@ class InstagramFlower:
             
         for i in range(3):
             hx, hy = self.get_sub_branch_endpoints(i, growth_progress)
-            cv2.line(frame, (self.wx, self.wy), (hx, hy), (255, 185, 80), 2, cv2.LINE_AA)
-            cv2.line(frame, (self.wx, self.wy), (hx, hy), (255, 235, 170), 1, cv2.LINE_AA)
+            self.draw_curved_gradient_stem(frame, (self.wx, self.wy), (hx, hy), i, growth_progress)
 
     def draw_all_flowers(self, frame, growth_progress, bloom_progress):
         if growth_progress > 0.4 and bloom_progress > 0.05:
-            flower_size = int(130 * bloom_progress)
+            flower_size = int(140 * bloom_progress)
             if flower_size % 2 != 0: 
                 flower_size += 1 
             
-            asset_type = 'mid' if bloom_progress < 0.65 else 'full'
-            
             for i in range(3):
                 hx, hy = self.get_sub_branch_endpoints(i, growth_progress)
-                frame = self.overlay_png_fast(frame, asset_type, hx, hy, flower_size, bloom_progress)
+                frame = self.overlay_png_fast(frame, hx, hy, flower_size)
