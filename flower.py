@@ -12,14 +12,14 @@ class InstagramFlower:
         self.prev_hx = [None, None, None]
         self.prev_hy = [None, None, None]
         
-        # Load only the single asset in its true colors
+        # Load single asset
         self.asset_full = cv2.imread('assets/full.png', cv2.IMREAD_UNCHANGED)
         
-        # Cache variables to maintain 30+ FPS
+        # Cache variables for performance
         self.cached_size = -1
-        self.cached_img = None
-        self.cached_mask = None
         self.cached_color = None
+        self.cached_mask = None
+        self.cached_glow_mask = None
         
         self.branch_offsets = [-0.18, 0.0, 0.18] 
 
@@ -51,7 +51,7 @@ class InstagramFlower:
             
         return self.prev_hx[idx], self.prev_hy[idx]
 
-    def draw_curved_gradient_stem(self, frame, start_pt, end_pt, idx, growth_progress):
+    def draw_curved_realistic_stem(self, frame, start_pt, end_pt, idx, growth_progress):
         if growth_progress <= 0.05:
             return
 
@@ -75,25 +75,35 @@ class InstagramFlower:
 
         for i in range(len(curve_pts) - 1):
             t = i / steps
-            b = int((1 - t) * 120 + t * 240)
-            g = int((1 - t) * 40 + t * 220)
-            r = int((1 - t) * 160 + t * 60)
-            
-            cv2.line(frame, curve_pts[i], curve_pts[i+1], (b, g, r), 3, cv2.LINE_AA)
-            cv2.line(frame, curve_pts[i], curve_pts[i+1], (255, 255, 255), 1, cv2.LINE_AA)
+            b = int((1 - t) * 20 + t * 40)
+            g = int((1 - t) * 35 + t * 65)
+            r = int((1 - t) * 55 + t * 100)
+            thickness = 3 if t < 0.6 else 2
+            cv2.line(frame, curve_pts[i], curve_pts[i+1], (b, g, r), thickness, cv2.LINE_AA)
 
-    def overlay_png_fast(self, background, cx, cy, size):
-        """Blends the raw flower image rapidly without any color shifting alterations."""
+    def overlay_png_with_glow(self, background, cx, cy, size):
+        """High-speed glow rendering using sub-sampled blending maps to fix full-bloom lag."""
         if size <= 0 or self.asset_full is None:
             return background
 
-        # Performance booster: Recalculate cache only if image size scales up/down
         if size != self.cached_size:
             resized = cv2.resize(self.asset_full, (size, size), interpolation=cv2.INTER_LINEAR)
             self.cached_size = size
             self.cached_color = resized[:, :, :3]
-            self.cached_mask = (resized[:, :, 3] / 255.0)[:, :, np.newaxis]
-        
+            alpha_raw = resized[:, :, 3]
+            self.cached_mask = (alpha_raw / 255.0)[:, :, np.newaxis]
+            
+            # SPEED OPTIMIZATION: Downsample the mask before running the blur filter to save CPU threads
+            small_blur_size = max(4, size // 4)
+            downsampled_alpha = cv2.resize(alpha_raw, (small_blur_size, small_blur_size), interpolation=cv2.INTER_AREA)
+            
+            blur_kernel = max(3, int(small_blur_size * 0.3) | 1)
+            blurred_small = cv2.GaussianBlur(downsampled_alpha, (blur_kernel, blur_kernel), 0)
+            
+            # Scale it back up to full size smoothly
+            mask_blurred = cv2.resize(blurred_small, (size, size), interpolation=cv2.INTER_LINEAR)
+            self.cached_glow_mask = (mask_blurred / 255.0)[:, :, np.newaxis] * 0.55  
+
         x1, x2 = cx - size // 2, cx + size // 2
         y1, y2 = cy - size // 2, cy + size // 2
         
@@ -102,7 +112,12 @@ class InstagramFlower:
             return background
 
         roi = background[y1:y2, x1:x2]
-        background[y1:y2, x1:x2] = (roi * (1.0 - self.cached_mask) + self.cached_color * self.cached_mask).astype(np.uint8)
+        
+        glow_color = np.zeros_like(roi)
+        glow_color[:] = (180, 80, 255)
+        roi_glowed = (roi * (1.0 - self.cached_glow_mask) + glow_color * self.cached_glow_mask).astype(np.uint8)
+        
+        background[y1:y2, x1:x2] = (roi_glowed * (1.0 - self.cached_mask) + self.cached_color * self.cached_mask).astype(np.uint8)
         return background
 
     def draw_all_branches(self, frame, growth_progress):
@@ -113,7 +128,7 @@ class InstagramFlower:
             
         for i in range(3):
             hx, hy = self.get_sub_branch_endpoints(i, growth_progress)
-            self.draw_curved_gradient_stem(frame, (self.wx, self.wy), (hx, hy), i, growth_progress)
+            self.draw_curved_realistic_stem(frame, (self.wx, self.wy), (hx, hy), i, growth_progress)
 
     def draw_all_flowers(self, frame, growth_progress, bloom_progress):
         if growth_progress > 0.4 and bloom_progress > 0.05:
@@ -123,4 +138,4 @@ class InstagramFlower:
             
             for i in range(3):
                 hx, hy = self.get_sub_branch_endpoints(i, growth_progress)
-                frame = self.overlay_png_fast(frame, hx, hy, flower_size)
+                frame = self.overlay_png_with_glow(frame, hx, hy, flower_size)
